@@ -358,7 +358,7 @@ def evaluate_baseline(
 
 def _infer_clause_type_from_question(question: str) -> str:
     """Infer clause type from a CUAD-style question string."""
-    from stage1_2_pipeline import CUAD_CLAUSE_TYPES
+    from src.stage1_extract_classify.pipeline import CUAD_CLAUSE_TYPES
     for clause_type in CUAD_CLAUSE_TYPES:
         if clause_type.lower() in question.lower():
             return clause_type
@@ -415,9 +415,7 @@ if __name__ == "__main__":
     parser.add_argument("--spacy_model", default="en_core_web_sm")
     args = parser.parse_args()
 
-    # Inline import to avoid circular dependency when run standalone
-    import sys; sys.path.insert(0, ".")
-    from stage1_2_pipeline import preprocess_contract
+    from src.stage1_extract_classify.pipeline import preprocess_contract
 
     contract_text = preprocess_contract(args.contract_file)
     extractor = RuleBasedExtractor(spacy_model=args.spacy_model)

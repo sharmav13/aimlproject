@@ -163,8 +163,7 @@ def evaluate_baseline_model(
     spacy_model: str = "en_core_web_sm",
 ) -> dict:
     """Run rule-based baseline on test examples and compute same metrics."""
-    import sys; sys.path.insert(0, ".")
-    from stage1_2_baseline import RuleBasedExtractor, _squad_em_f1, span_iou as _iou
+    from src.stage1_extract_classify.baseline import RuleBasedExtractor, _squad_em_f1
 
     extractor = RuleBasedExtractor(spacy_model=spacy_model)
 
@@ -355,8 +354,7 @@ if __name__ == "__main__":
         test_examples = test_examples[: args.n_examples]
         logger.info(f"Using {args.n_examples} examples for quick evaluation")
 
-    import sys; sys.path.insert(0, ".")
-    from stage1_2_pipeline import CUAD_CLAUSE_TYPES
+    from src.stage1_extract_classify.pipeline import CUAD_CLAUSE_TYPES
 
     # DeBERTa evaluation
     deberta_results = evaluate_deberta(args.model_path, test_examples, CUAD_CLAUSE_TYPES)
