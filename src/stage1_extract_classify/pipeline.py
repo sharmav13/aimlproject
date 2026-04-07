@@ -72,13 +72,29 @@ class ExtractionResult:
 # Dataset utilities
 # ---------------------------------------------------------------------------
 
+from datasets import load_dataset, DatasetDict
+
 def load_cuad_dataset() -> DatasetDict:
     """
-    Load CUAD from HuggingFace in native SQuAD-style QA format.
-    CUAD: 510 contracts, 13K annotations, 41 categories. License: CC BY 4.0.
+    Load CUAD safely without triggering full PDF pipeline.
+    Creates train + validation splits manually.
     """
     logger.info("Loading CUAD dataset from HuggingFace…")
-    dataset = load_dataset("theatticusproject/cuad")
+
+    # Load subset for stability (increase later)
+    dataset = load_dataset(
+        "theatticusproject/cuad",
+        split="train"   # 🔥 IMPORTANT
+    )
+
+    # Create train/validation split
+    dataset = dataset.train_test_split(test_size=0.1, seed=42)
+
+    dataset = DatasetDict({
+        "train": dataset["train"],
+        "validation": dataset["test"],
+    })
+
     logger.info(f"CUAD loaded. Splits: {list(dataset.keys())}")
     return dataset
 
@@ -182,14 +198,6 @@ def fine_tune_deberta(
     model = AutoModelForQuestionAnswering.from_pretrained(model_name)
 
     dataset = load_cuad_dataset()
-
-    # CUAD has no native val split — carve 10% off train
-    train_val = dataset["train"].train_test_split(test_size=0.10, seed=42)
-    dataset = DatasetDict({
-        "train":      train_val["train"],
-        "validation": train_val["test"],   # held-out val (~2,200 examples)
-        "test":       dataset["test"],     # never touched until final eval
-    })
 
     logger.info("Preprocessing dataset…")
     fn_kwargs = {"tokenizer": tokenizer, "max_length": max_length, "doc_stride": doc_stride}
