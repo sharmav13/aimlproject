@@ -82,7 +82,7 @@ def fine_tune_deberta(
     per_device_train_batch_size: int = 8,
     per_device_eval_batch_size: int = 8,
     learning_rate: float = 2e-5,
-    fp16: bool = True,
+    fp16: bool = False,
     data_path = None,
 ):
     """
@@ -114,7 +114,7 @@ def fine_tune_deberta(
     num_train_epochs= num_train_epochs,
     per_device_train_batch_size=per_device_train_batch_size,   
     per_device_eval_batch_size=per_device_eval_batch_size,
-    evaluation_strategy="steps",
+    eval_strategy="steps",
     eval_steps=1000,
     save_strategy="steps",
     save_steps=1000,
@@ -415,6 +415,7 @@ if __name__ == "__main__":
     train_parser = subparsers.add_parser("train", help="Fine-tune DeBERTa on CUAD")
     train_parser.add_argument("--model", default="microsoft/deberta-base")
     train_parser.add_argument("--output_dir", default="./models/stage1_2_deberta")
+    train_parser.add_argument("--data_path", type=str, default=None, help="Path to tokenized dataset")
     train_parser.add_argument("--epochs", type=int, default=3)
     train_parser.add_argument("--batch_size", type=int, default=4)
     train_parser.add_argument("--lr", type=float, default=2e-5)
@@ -437,6 +438,7 @@ if __name__ == "__main__":
         fine_tune_deberta(
             model_name=args.model,
             output_dir=args.output_dir,
+            data_path=args.data_path,
             num_train_epochs=args.epochs,
             per_device_train_batch_size=args.batch_size,
             learning_rate=args.lr,

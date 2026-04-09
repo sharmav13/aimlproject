@@ -2,43 +2,28 @@ import json
 import logging
 import os
 from pathlib import Path
+import random
 
 from datasets import DatasetDict, Dataset, load_from_disk
 from transformers import AutoTokenizer
-"""
-Preprocessing script for CUAD dataset.
-
-Converts CUAD_v1.json → tokenized dataset for QA training.
-
-NOTE:
-- This is a one-time offline step
-- Output is saved using `datasets.save_to_disk`
-- Training pipeline loads preprocessed data directly
-"""
+from datasets import concatenate_datasets
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger(__name__)
 
-# =========================
-# CONFIG
-# =========================
 MODEL_NAME = "microsoft/deberta-base"
 CACHE_PATH = "./tokenized_cuad"
+
 
 # =========================
 # CACHE VALIDATION
 # =========================
 def cache_is_valid(path: str) -> bool:
-    """
-    Checks whether a previously saved tokenized dataset exists and is loadable.
-    A directory that exists but is empty or corrupted will return False.
-    """
     try:
         load_from_disk(path)
         logger.info(f"✅ Valid cache found at: {path}")
         return True
-    except Exception as e:
-        logger.warning(f"Cache at '{path}' is invalid or corrupted ({e}). Reprocessing.")
+    except Exception:
         return False
 
 # =========================
@@ -53,10 +38,7 @@ def load_cuad_dataset() -> DatasetDict:
     json_path = next((p for p in candidates if p and Path(p).exists()), None)
 
     if json_path is None:
-        raise FileNotFoundError(
-            "CUAD_v1.json not found. Set the CUAD_JSON environment variable "
-            "or place the file in the current directory."
-        )
+        raise FileNotFoundError("CUAD_v1.json not found")
 
     logger.info(f"Loading CUAD dataset from: {json_path}")
 
@@ -82,18 +64,49 @@ def load_cuad_dataset() -> DatasetDict:
                     })
 
     flat = Dataset.from_dict(rows)
-    logger.info(f"Loaded {len(flat)} QA pairs")
+    logger.info(f"Loaded {len(flat)} total QA pairs")
 
-    # Split: 80% train / 10% val / 10% test
+    # =========================
+    # SPLIT raw unbalanced data
+    # =========================
     split = flat.train_test_split(test_size=0.10, seed=42)
-    train_val = split["train"]
-    test = split["test"]
+    raw_train_val = split["train"]
+    test = split["test"]  # natural distribution — never touched by balancing
 
-    # 10% of total ≈ 11.1% of the 90% remainder
     VAL_RATIO = 0.10 / 0.90
-    split = train_val.train_test_split(test_size=VAL_RATIO, seed=42)
-    train = split["train"]
-    val = split["test"]
+    split2 = raw_train_val.train_test_split(test_size=VAL_RATIO, seed=42)
+    raw_train = split2["train"]
+    val = split2["test"]  # natural distribution — never touched by balancing
+
+    logger.info(f"Pre-balance sizes → train: {len(raw_train)}, val: {len(val)}, test: {len(test)}")
+
+    # =========================
+    # BALANCE TRAIN ONLY, with 1:1 ratio
+    # =========================
+    logger.info("Balancing training set...")
+
+    positives = raw_train.filter(lambda x: len(x["answers"]["answer_start"]) > 0)
+    negatives = raw_train.filter(lambda x: len(x["answers"]["answer_start"]) == 0)
+
+    logger.info(f"Train → Positives: {len(positives)}, Negatives: {len(negatives)}")
+
+    # Sanity check — no rows should be lost or double-counted
+    assert len(positives) + len(negatives) == len(raw_train), (
+        f"Balancing filter leaked rows! "
+        f"{len(positives)} + {len(negatives)} != {len(raw_train)}"
+    )
+
+    # 1:1 ratio — better for CUAD's sparse clause distribution
+    negatives = negatives.shuffle(seed=42).select(
+        range(min(len(negatives), len(positives)))
+    )
+
+    train = concatenate_datasets([positives, negatives])
+    train = train.shuffle(seed=42)
+
+    pos = sum(1 for x in train if len(x["answers"]["answer_start"]) > 0)
+    neg = len(train) - pos
+    logger.info(f"Balanced train → Positives: {pos}, Negatives: {neg}, Ratio: 1:{neg/pos:.2f}")
 
     dataset = DatasetDict({
         "train": train,
@@ -105,16 +118,9 @@ def load_cuad_dataset() -> DatasetDict:
     return dataset
 
 # =========================
-# PREPROCESSING
+# TOKENIZATION
 # =========================
 def preprocess_for_qa(examples: dict, tokenizer: AutoTokenizer) -> dict:
-    """
-    Tokenizes QA examples with sliding window (stride=128) and maps
-    character-level answer spans to token-level start/end positions.
-
-    CUAD answers often have duplicate annotations; we use the first
-    answer only for the training span label.
-    """
     tokenized = tokenizer(
         [q.strip() for q in examples["question"]],
         examples["context"],
@@ -134,22 +140,10 @@ def preprocess_for_qa(examples: dict, tokenizer: AutoTokenizer) -> dict:
 
     for i, offsets in enumerate(offset_mapping):
 
-        # Guard: missing offsets
-        if offsets is None:
-            start_positions.append(0)
-            end_positions.append(0)
-            continue
-
         sequence_ids = tokenized.sequence_ids(i)
-        if sequence_ids is None:
-            start_positions.append(0)
-            end_positions.append(0)
-            continue
-
         sample_idx = sample_map[i]
         answer = answers[sample_idx]
 
-        # Find the token range that covers the context (sequence_id == 1)
         try:
             ctx_start = next(j for j, s in enumerate(sequence_ids) if s == 1)
             ctx_end = len(sequence_ids) - 1 - next(
@@ -160,44 +154,31 @@ def preprocess_for_qa(examples: dict, tokenizer: AutoTokenizer) -> dict:
             end_positions.append(0)
             continue
 
-        # Unanswerable / impossible questions → label (0, 0)
         if not answer["answer_start"]:
             start_positions.append(0)
             end_positions.append(0)
             continue
 
-        # Use the first annotation (CUAD duplicates are intentional)
         char_start = answer["answer_start"][0]
         char_end = char_start + len(answer["text"][0])
-
-        # Guard: window doesn't cover the answer at all → label (0, 0)
-        if offsets[ctx_start] is None or offsets[ctx_end] is None:
-            start_positions.append(0)
-            end_positions.append(0)
-            continue
 
         if offsets[ctx_start][0] > char_end or offsets[ctx_end][1] < char_start:
             start_positions.append(0)
             end_positions.append(0)
             continue
 
-        # Walk forward until the token's start offset exceeds char_start;
-        # the answer begins at the last token whose start is still <= char_start.
+        # FIX: Check current token's offset, not next/prev (was off-by-one)
+        # Find start token: walk forward until we pass char_start, then step back
         token_start = ctx_start
-        while (
-            token_start < ctx_end
-            and offsets[token_start + 1][0] <= char_start
-        ):
+        while token_start <= ctx_end and offsets[token_start][0] <= char_start:
             token_start += 1
+        token_start -= 1  # last token whose start offset <= char_start
 
-        # Walk backward until the token's end offset is less than char_end;
-        # the answer ends at the last token whose end is still >= char_end.
+        # Find end token: walk backward until we pass char_end, then step forward
         token_end = ctx_end
-        while (
-            token_end > ctx_start
-            and offsets[token_end - 1][1] >= char_end
-        ):
+        while token_end >= ctx_start and offsets[token_end][1] >= char_end:
             token_end -= 1
+        token_end += 1  # first token whose end offset >= char_end
 
         start_positions.append(token_start)
         end_positions.append(token_end)
@@ -213,34 +194,30 @@ def preprocess_for_qa(examples: dict, tokenizer: AutoTokenizer) -> dict:
 def main():
 
     if cache_is_valid(CACHE_PATH):
-        logger.info("Skipping preprocessing — delete the cache folder to rerun.")
+        logger.info("Skipping preprocessing — delete cache to rerun.")
         return
 
     dataset = load_cuad_dataset()
 
     logger.info(f"Loading tokenizer: {MODEL_NAME}")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-    logger.info(f"Tokenizer loaded. Vocab size: {tokenizer.vocab_size}")
 
-    logger.info("Starting preprocessing (this will take a few minutes)...")
+    logger.info("Tokenizing dataset...")
 
     tokenized = dataset.map(
         preprocess_for_qa,
         fn_kwargs={"tokenizer": tokenizer},
         batched=True,
-        num_proc=os.cpu_count(),   # use all available CPU cores
+        num_proc=None,
         remove_columns=dataset["train"].column_names,
     )
 
-    logger.info(f"Saving tokenized dataset to: {CACHE_PATH}")
+    logger.info(f"Saving dataset to: {CACHE_PATH}")
     tokenized.save_to_disk(CACHE_PATH)
 
-    # Save tokenizer alongside the dataset so Colab loads the exact same version
-    tokenizer_path = os.path.join(CACHE_PATH, "tokenizer")
-    tokenizer.save_pretrained(tokenizer_path)
-    logger.info(f"Tokenizer saved to: {tokenizer_path}")
+    tokenizer.save_pretrained(os.path.join(CACHE_PATH, "tokenizer"))
 
-    logger.info("✅ DONE! Upload the entire folder to Google Drive / Colab.")
+    logger.info("✅ DONE!")
 
 
 if __name__ == "__main__":
