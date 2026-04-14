@@ -121,7 +121,7 @@ def fine_tune_deberta(
     logging_steps=100,
     learning_rate=learning_rate,
     weight_decay=0.01,
-    warmup_ratio=0.1,
+    warmup_steps=2300,
     fp16=None,
     load_best_model_at_end=True,
     metric_for_best_model="eval_loss",
@@ -136,8 +136,7 @@ def fine_tune_deberta(
         args=training_args,
         train_dataset=tokenized["train"],
         eval_dataset=tokenized["validation"],
-        tokenizer=tokenizer,
-        data_collator=DefaultDataCollator(),
+        processing_class=tokenizer,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=2)],
     )
 
