@@ -43,12 +43,22 @@ the `client.messages.create(model=...)` call — to use your local Qwen endpoint
 After the pilot run, audit ~100 clauses stratified by `(clause_type × risk_level)`.
 See `docs/STAGE3_SYNTHETIC_LABELS_DISCUSSION.md` for the full audit checklist and three-phase rollout plan.
 
-### What's Next (after pilot)
-1. **Audit pilot labels** — stratified sample ~100 clauses, check `risk_driver` specificity and label correctness
-2. **Full labeling run** — ~3,974 API calls (after metadata filter + dedup)
-3. **Compare with Copilot labels** — `data/CUAD_clause_risk_dataset_copilot.csv` has colleague's labels; join key is `(Document Name - .pdf extension, Clause Type)` → matches our `(contract, clause_type)`
-4. **Train DeBERTa (Stage 1)** — still needs GPU; see Stage 1 notes below
-5. **Build FAISS index** — embed labeled clauses for Stage 3 RAG retrieval
+### What's Done (Stage 3 labeling — 2026-04-17/18)
+- **Qwen/30B labels**: `data/synthetic/synthetic_risk_labels_qwen.json` — 4,410 rows, temp=0, GPU
+- **Gemini 2.5 Flash labels**: `data/synthetic/synthetic_risk_labels_gemini.json` — 4,410 rows, temp=0, JSON mode
+- **Copilot labels cleaned**: `data/cuad_risk_labels_copilot.csv` — 6,702 rows (removed 100 bad rows)
+- **Master review file**: `data/review/master_label_review.csv` — all 6,702 spans with categories,
+  disagreement analysis, reviewer assignments, row_num 1–6702
+- **Analysis docs**: `docs/STAGE3_LABEL_ANALYSIS.md`, `docs/STAGE3_LABEL_COMPARISON.md`
+
+### Immediate Next Steps
+1. **Colleagues review 239 MANUAL_REVIEW rows** — filter `master_label_review.csv` by `reviewer` column,
+   fill `final_label` (rows 5028–5266)
+2. **Run Opus 4.7 on 87 OPUS_REVIEW rows** — `scripts/run_opus_review.py` (to be created)
+3. **Merge final labels** — join reviewed `final_label` back on `row_num`
+4. **Build training dataset** — hard labels for AGREED/reviewed rows, soft labels for SOFT_LABEL rows
+5. **Train DeBERTa risk classifier** — fine-tune on merged labels (GPU needed)
+6. **Build FAISS index** — embed labeled clauses for Stage 3 RAG retrieval
 
 ### Stage 1 — still pending (GPU needed)
 1. **Tokenize full training set** — run `preprocess_for_qa()` on all 22,450 examples

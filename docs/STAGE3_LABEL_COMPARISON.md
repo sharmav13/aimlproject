@@ -110,9 +110,58 @@ Priority audit list:
 
 ---
 
+## Label Reconciliation Strategy (decided 2026-04-18)
+
+### Master Review File
+`data/review/master_label_review.csv` — all 6,702 spans in one file with columns:
+`row_num, review_id, id, contract, clause_type, clause_text, category,
+disagreement_type, disagreement_direction, label_gap, clause_risk_profile,
+typical_risk_for_type, qwen_label, gemini_label, copilot_label,
+qwen_confidence, gemini_confidence, qwen_reason, gemini_reason,
+final_label, reviewer, notes`
+
+### Row Categories & How final_label Gets Filled
+
+| Category | Rows | How Resolved | row_num range |
+|---|---|---|---|
+| METADATA | 2,292 | Pre-filled "METADATA" — routes to report header, not trained | 1–2292 |
+| AGREED | 2,735 | Pre-filled — both Qwen & Gemini agree | 2293–5027 |
+| MANUAL_REVIEW | 239 | Human fills `final_label` — HIGH↔LOW extreme flips | 5028–5266 |
+| OPUS_REVIEW | 87 | Opus 4.7 fills `final_label` — 3 focus type disagreements | 5267–5353 |
+| SOFT_LABEL | 1,327 | Soft probability computed from Qwen+Gemini outputs, no hard label needed | 5354–6680 |
+| ERROR | 22 | Dropped from training | 6681–6702 |
+
+### SOFT_LABEL Approach
+Adjacent disagreements (LOW↔MEDIUM or MEDIUM↔HIGH) are encoded as probability distributions
+for DeBERTa training via KLDivLoss instead of CrossEntropyLoss:
+```
+Qwen=HIGH, Gemini=MEDIUM → [LOW=0.0, MEDIUM=0.5, HIGH=0.5]
+Qwen=LOW,  Gemini=MEDIUM → [LOW=0.5, MEDIUM=0.5, HIGH=0.0]
+```
+Confidence-weighted variant available using `qwen_confidence` / `gemini_confidence` columns.
+
+### Manual Review Assignment (239 rows, ~60 per person)
+Clause types assigned whole (not split) so each reviewer builds expertise in their types:
+- **Anushka** (60 rows): Cap On Liability, Audit Rights, Covenant Not To Sue, Termination For Convenience, No-Solicit Of Customers, Warranty Duration, Non-Compete
+- **Rajnish** (60 rows): Uncapped Liability, IP Ownership Assignment, License Grant, Volume Restriction, Non-Transferable License, Affiliate License-Licensee, Price Restrictions, ROFR
+- **Sachin** (60 rows): Minimum Commitment, Exclusivity, Post-Termination Services, Competitive Restriction Exception, Revenue/Profit Sharing, Source Code Escrow, Insurance, Governing Law
+- **Vishal** (59 rows): Irrevocable Or Perpetual License, Anti-Assignment, Renewal Term, Liquidated Damages, Non-Disparagement, Most Favored Nation, Change Of Control, Notice Period
+
+### Opus 4.7 Review (87 rows)
+Focus types with non-flip disagreements (MEDIUM↔HIGH or LOW↔MEDIUM):
+- Uncapped Liability: 50 rows
+- Liquidated Damages: 19 rows
+- Irrevocable Or Perpetual License: 17 rows (non-flip subset, flips go to Vishal)
+Script: `scripts/run_opus_review.py` — to be created.
+
+### Merging Back
+Join `final_label` from review file into training dataset on `row_num`.
+SOFT_LABEL rows: compute soft vectors programmatically from `qwen_label`, `gemini_label`,
+`qwen_confidence`, `gemini_confidence` at training time.
+
 ## Next Steps
 
-1. Build three-way merged label file with majority vote logic
-2. Audit 235 HIGH↔LOW flips manually
-3. Review `Uncapped Liability` subset — determine which model is correct
-4. Use merged labels to train DeBERTa risk classifier (Stage 3)
+1. Colleagues complete MANUAL_REVIEW rows (filter by `reviewer` column in master CSV)
+2. Run Opus 4.7 on 87 OPUS_REVIEW rows (`scripts/run_opus_review.py`)
+3. Merge final_label back → build training dataset with hard + soft labels
+4. Train DeBERTa risk classifier on merged labels
