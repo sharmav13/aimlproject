@@ -140,12 +140,45 @@ Qwen=LOW,  Gemini=MEDIUM → [LOW=0.5, MEDIUM=0.5, HIGH=0.0]
 ```
 Confidence-weighted variant available using `qwen_confidence` / `gemini_confidence` columns.
 
-### Manual Review Assignment (239 rows, ~60 per person)
-Clause types assigned whole (not split) so each reviewer builds expertise in their types:
+### Manual Review Instructions for Colleagues
+
+**Repo**: https://github.com/rajnishahuja/ai_ml_project  
+**File to edit**: `data/review/master_label_review.csv`  
+**Your rows**: filter column `reviewer` by your name — all your rows are in the `MANUAL_REVIEW` category (row_num 5028–5266)
+
+**What to do**:
+1. Clone/pull the repo
+2. Open `data/review/master_label_review.csv` in Excel or any CSV editor
+3. Filter `reviewer` = your name
+4. For each row, read: `clause_text`, `clause_type`, `clause_risk_profile`, `typical_risk_for_type`, `qwen_reason`, `gemini_reason`
+5. Fill in `final_label` — must be exactly: `LOW`, `MEDIUM`, or `HIGH`
+6. Optionally add a short note in `notes` if your reasoning differs from both models
+7. Save, commit, and push directly to main
+
+**Key principle**: assess risk **from the perspective of the party signing the contract** (the non-drafting party — typically the customer, licensee, or distributor). A clause that grants broad rights to the signing party is LOW risk; one that imposes uncapped obligations or strips their rights is HIGH.
+
+**Helpful columns**:
+- `clause_risk_profile` — domain knowledge about what makes this clause type risky
+- `typical_risk_for_type` — the most common agreed label across all contracts for this type
+- `qwen_reason` / `gemini_reason` — both models' reasoning; use as input, not as the answer
+- `disagreement_direction` — which model said higher risk (Qwen↑ or Gemini↑)
+- `copilot_label` — a third reference label (treat as additional signal, not ground truth)
+
+**Assignment (239 rows, ~60 per person, whole clause types per reviewer):**
 - **Anushka** (60 rows): Cap On Liability, Audit Rights, Covenant Not To Sue, Termination For Convenience, No-Solicit Of Customers, Warranty Duration, Non-Compete
 - **Rajnish** (60 rows): Uncapped Liability, IP Ownership Assignment, License Grant, Volume Restriction, Non-Transferable License, Affiliate License-Licensee, Price Restrictions, ROFR
 - **Sachin** (60 rows): Minimum Commitment, Exclusivity, Post-Termination Services, Competitive Restriction Exception, Revenue/Profit Sharing, Source Code Escrow, Insurance, Governing Law
 - **Vishal** (59 rows): Irrevocable Or Perpetual License, Anti-Assignment, Renewal Term, Liquidated Damages, Non-Disparagement, Most Favored Nation, Change Of Control, Notice Period
+
+**Git push** (no PR required, push directly to main):
+```bash
+git pull origin main
+# edit the CSV
+git add data/review/master_label_review.csv
+git commit -m "Review: <your name> fills final_label for <clause types>"
+git push origin main
+```
+If you hit a merge conflict on the CSV, ping Rajnish — he'll merge manually.
 
 ### Opus 4.7 Review (87 rows)
 Focus types with non-flip disagreements (MEDIUM↔HIGH or LOW↔MEDIUM):
