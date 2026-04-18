@@ -127,7 +127,7 @@ final_label, reviewer, notes`
 | METADATA | 2,292 | Pre-filled "METADATA" — routes to report header, not trained | 1–2292 |
 | AGREED | 2,735 | Pre-filled — both Qwen & Gemini agree | 2293–5027 |
 | MANUAL_REVIEW | 239 | Human fills `final_label` — HIGH↔LOW extreme flips | 5028–5266 |
-| OPUS_REVIEW | 87 | Opus 4.7 fills `final_label` — 3 focus type disagreements | 5267–5353 |
+| GEMINI_PRO_REVIEW | 87 | Gemini 2.5 Pro fills `final_label` — 3 focus type disagreements | 5267–5353 |
 | SOFT_LABEL | 1,327 | Soft probability computed from Qwen+Gemini outputs, no hard label needed | 5354–6680 |
 | ERROR | 22 | Dropped from training | 6681–6702 |
 
@@ -180,12 +180,12 @@ git push origin main
 ```
 If you hit a merge conflict on the CSV, ping Rajnish — he'll merge manually.
 
-### Opus 4.7 Review (87 rows)
+### Gemini 2.5 Pro Review (87 rows) — COMPLETE
 Focus types with non-flip disagreements (MEDIUM↔HIGH or LOW↔MEDIUM):
 - Uncapped Liability: 50 rows
 - Liquidated Damages: 19 rows
 - Irrevocable Or Perpetual License: 17 rows (non-flip subset, flips go to Vishal)
-Script: `scripts/run_opus_review.py` — to be created.
+Script: `scripts/run_gemini_pro_review.py`
 
 ### Merging Back
 Join `final_label` from review file into training dataset on `row_num`.
@@ -195,6 +195,6 @@ SOFT_LABEL rows: compute soft vectors programmatically from `qwen_label`, `gemin
 ## Next Steps
 
 1. Colleagues complete MANUAL_REVIEW rows (filter by `reviewer` column in master CSV)
-2. Run Opus 4.7 on 87 OPUS_REVIEW rows (`scripts/run_opus_review.py`)
+2. ~~Run Gemini 2.5 Pro on 87 GEMINI_PRO_REVIEW rows~~ — DONE (`scripts/run_gemini_pro_review.py`)
 3. Merge final_label back → build training dataset with hard + soft labels
 4. Train DeBERTa risk classifier on merged labels

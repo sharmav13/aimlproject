@@ -54,7 +54,7 @@ See `docs/STAGE3_SYNTHETIC_LABELS_DISCUSSION.md` for the full audit checklist an
 ### Immediate Next Steps
 1. **Colleagues review 239 MANUAL_REVIEW rows** — filter `master_label_review.csv` by `reviewer` column,
    fill `final_label` (rows 5028–5266)
-2. **Run Opus 4.7 on 87 OPUS_REVIEW rows** — `scripts/run_opus_review.py` (to be created)
+2. **Run Gemini 2.5 Pro on 87 GEMINI_PRO_REVIEW rows** — DONE (`scripts/run_gemini_pro_review.py`)
 3. **Merge final labels** — join reviewed `final_label` back on `row_num`
 4. **Build training dataset** — hard labels for AGREED/reviewed rows, soft labels for SOFT_LABEL rows
 5. **Train DeBERTa risk classifier** — fine-tune on merged labels (GPU needed)
